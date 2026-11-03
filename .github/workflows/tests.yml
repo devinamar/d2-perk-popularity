@@ -1,0 +1,17 @@
+# The offline tests on every push to main and every pull request. The data
+# branch holds only the published JSON, so it isn't tested.
+name: tests
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - run: pip install -r requirements.txt pytest
+      - run: python -m pytest -q

@@ -1,0 +1,19 @@
+# Kept out of the image: history, secrets, machine-local state and caches.
+.git
+.claude
+.env
+*.db
+*.db-journal
+*.bak
+*.db.prev
+.cache
+logs
+.lock
+perk_scores.json
+.venv
+venv
+**/__pycache__
+.pytest_cache
+.ruff_cache
+data
+local

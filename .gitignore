@@ -1,0 +1,26 @@
+# The Bungie API key
+.env
+
+# The database, the backup a schema change leaves, and a replaced copy (.prev)
+*.db
+*.db-journal
+*.bak
+*.db.prev
+
+# The manifest download
+.cache/
+
+# Python
+__pycache__/
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Machine-local: the service's data folder and private deploy scripts
+data/
+local/
+
+# The run lock, the run log and the exported scores
+.lock
+logs/
+perk_scores.json

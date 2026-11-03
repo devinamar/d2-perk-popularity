@@ -1,0 +1,23 @@
+# D2 Perk Popularity as a long-running service: `docker compose up -d --build`
+# builds the image (Dockerfile) and starts the scheduler (service.py). The one
+# mount, ./data, holds the database, the manifest cache, .env and SQLite's
+# temporary files (tmp/), so a big query spills to disk, not to memory.
+# Everything else is read-only, with /tmp in memory.
+services:
+  app:
+    build: .
+    image: d2-perk-popularity:latest
+    environment:
+      D2_PERKS_DATA: /data
+      SQLITE_TMPDIR: /data/tmp
+    volumes:
+      - ./data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
