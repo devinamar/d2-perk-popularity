@@ -3,8 +3,9 @@
 # minutes, one run at a time and each in a process of its own, so one run's
 # state never carries into the next. When more than one is due, the one due
 # longest runs first; a run that takes longer than its interval only makes the
-# next one late. The scores are published weekly, after the run going at the
-# time. Times are UTC. Each run's output goes to the app's log.
+# next one late. The timed jobs (the daily purge, the weekly publish) run after
+# the run going at their time. Times are UTC. Each run's output goes to the
+# app's log.
 import datetime
 import pathlib
 import subprocess
@@ -23,9 +24,16 @@ JOBS = [
     # the scan read how their run started, until none is left.
     (5, ['--scan', '3000', '--crawl', '0', '--per-category', '67', '--catch-up', '3000']),
 ]
-# The weekly publish, on Mondays from 08:30.
-PUBLISH = ['--scan', '0', '--crawl', '0', '--publish']
-PUBLISH_DAY, PUBLISH_TIME = 0, datetime.time(8, 30)
+# (weekday from Monday 0, or None for every day; time; main.py's arguments),
+# in the order they run when both are due.
+TIMED = [
+    # The purge, daily from 08:00: rolling the votes to the window and dropping
+    # the copies, plugs and raw PGCRs nothing needs any more takes minutes on
+    # the whole database and changes little in a day, so runs don't do it.
+    (None, datetime.time(8, 0), ['--scan', '0', '--crawl', '0', '--purge']),
+    # The publish, on Mondays from 08:30, after that day's purge.
+    (0, datetime.time(8, 30), ['--scan', '0', '--crawl', '0', '--publish']),
+]
 
 
 def next_job(next_at: list, now: float) -> int | None:
@@ -35,13 +43,15 @@ def next_job(next_at: list, now: float) -> int | None:
     return i if next_at[i] <= now else None
 
 
-def publish_slot(now: datetime.datetime) -> datetime.datetime:
-    # The latest publish time at or before now.
-    slot = datetime.datetime.combine(now.date(), PUBLISH_TIME, now.tzinfo)
-    slot -= datetime.timedelta(days=(now.weekday() - PUBLISH_DAY) % 7)
-    if slot > now:
-        slot -= datetime.timedelta(days=7)
-    return slot
+def slot(now: datetime.datetime, weekday: int | None, at: datetime.time) -> datetime.datetime:
+    # The latest time at or before now a job timed at weekday (None: every day)
+    # and at falls due.
+    due = datetime.datetime.combine(now.date(), at, now.tzinfo)
+    if weekday is not None:
+        due -= datetime.timedelta(days=(now.weekday() - weekday) % 7)
+    if due > now:
+        due -= datetime.timedelta(days=1 if weekday is None else 7)
+    return due
 
 
 def run(args: list) -> None:
@@ -51,16 +61,19 @@ def run(args: list) -> None:
 def main():
     print("Scheduler started; times are UTC.", flush=True)
     next_at = [0.0] * len(JOBS)
-    # The next publish is the next slot's, not one on starting.
-    published = publish_slot(datetime.datetime.now(datetime.UTC))
+    # Each timed job next runs at its next slot, not on starting.
+    now = datetime.datetime.now(datetime.UTC)
+    done = [slot(now, weekday, at) for weekday, at, _ in TIMED]
     while True:
-        slot = publish_slot(datetime.datetime.now(datetime.UTC))
-        if slot > published:
-            published = slot
-            run(PUBLISH)
+        now = datetime.datetime.now(datetime.UTC)
+        for k, (weekday, at, args) in enumerate(TIMED):
+            due = slot(now, weekday, at)
+            if due > done[k]:
+                done[k] = due
+                run(args)
         i = next_job(next_at, time.time())
         if i is None:
-            # Until the next job is due, checking the publish each minute.
+            # Until the next job is due, checking the timed ones each minute.
             time.sleep(max(1.0, min(min(next_at) - time.time(), 60.0)))
             continue
         next_at[i] = time.time() + JOBS[i][0] * 60

@@ -1,5 +1,5 @@
 # The scheduler's choices (service.py): which job runs next, and when the
-# weekly publish is due. Times are UTC.
+# timed jobs (the daily purge, the weekly publish) are due. Times are UTC.
 import datetime
 
 import service
@@ -18,9 +18,17 @@ def test_a_job_runs_once_due(monkeypatch):
     assert service.next_job([100.0, 90.0], now=60.0) is None
 
 
-def test_the_publish_slot_is_the_latest_monday_0830():
-    # 2026-10-26 is a Monday.
-    assert service.publish_slot(at(26, 8, 30)) == at(26, 8, 30)
-    assert service.publish_slot(at(26, 8, 29)) == at(19, 8, 30)
-    assert service.publish_slot(at(27, 1, 0)) == at(26, 8, 30)
-    assert service.publish_slot(at(25, 23, 0)) == at(19, 8, 30)
+def test_a_timed_job_falls_due_at_its_latest_slot():
+    # 2026-10-26 is a Monday. The weekly publish, Mondays at 08:30:
+    publish = (0, datetime.time(8, 30))
+    assert service.slot(at(26, 8, 30), *publish) == at(26, 8, 30)
+    assert service.slot(at(26, 8, 29), *publish) == at(19, 8, 30)
+    assert service.slot(at(27, 1, 0), *publish) == at(26, 8, 30)
+    assert service.slot(at(25, 23, 0), *publish) == at(19, 8, 30)
+    # The daily purge, at 08:00:
+    purge = (None, datetime.time(8, 0))
+    assert service.slot(at(27, 8, 0), *purge) == at(27, 8, 0)
+    assert service.slot(at(27, 7, 59), *purge) == at(26, 8, 0)
+    assert service.slot(at(27, 23, 0), *purge) == at(27, 8, 0)
+    # On a Monday the purge falls due before the publish, and runs first.
+    assert [args[-1] for _, _, args in service.TIMED] == ['--purge', '--publish']

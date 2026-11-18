@@ -64,6 +64,12 @@ def parse_args(argv=None) -> argparse.Namespace:
         'to read again (default 0)',
     )
     parser.add_argument(
+        '--purge',
+        action='store_true',
+        help='then roll the votes to the window and drop what nothing needs any more '
+        '(the service does this once a day)',
+    )
+    parser.add_argument(
         '--publish',
         action='store_true',
         help="then export the scores and commit them to GITHUB_REPO's data branch",
@@ -146,8 +152,8 @@ def main():
         require('BUNGIE_API_KEY', 'the API key of a Bungie app, bungie.net/en/Application')
     )
 
-    # A failure stops the collection; what was done is saved, and the purge
-    # still runs on it.
+    # A failure stops the collection; what was done is saved, and a purge asked
+    # for still runs on it.
     ok, run = True, None
     try:
         manifest.ingest_manifest(conn, *download_manifest(api))
@@ -175,7 +181,8 @@ def main():
         print(f"\nStopped: {e}. What was done is saved.")
     if run:
         scan.print_summary(run)
-    votes.purge(conn)
+    if args.purge:
+        votes.purge(conn)
     if args.publish:
         ok = publish(conn) and ok
     stamp("done" if ok else "done, with an error")

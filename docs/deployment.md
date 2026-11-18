@@ -13,12 +13,12 @@ echo 'BUNGIE_API_KEY=...' > .env                    # a Bungie app's API key; no
 docker build --target test .                        # the tests, inside the app's image
 ```
 
-Every run ends by purging to the window. What a run writes (the database, the manifest cache, the
-lock, the export) goes to the repo root, or to `D2_PERKS_DATA` when set, where `.env` is read from
-too. `D2_PERKS_DB=path` points a run at another database, such as a copy made with
-`scripts/snapshot.py`. The score views are there for audits: `v_weapon_score`,
-`v_roll_score`, and its two sides `v_pve_roll_score` and `v_pvp_roll_score`; `weapon_version`
-holds the weapon each version is scored as.
+A run purges to the window only when asked (`--purge`); the service does it once a day. What a run
+writes (the database, the manifest cache, the lock, the export) goes to the repo root, or to
+`D2_PERKS_DATA` when set, where `.env` is read from too. `D2_PERKS_DB=path` points a run at another
+database, such as a copy made with `scripts/snapshot.py`. The score views are there for audits:
+`v_weapon_score`, `v_roll_score`, and its two sides `v_pve_roll_score` and `v_pvp_roll_score`;
+`weapon_version` holds the weapon each version is scored as.
 
 ## Running it as a service
 
@@ -45,10 +45,11 @@ longest goes first, so a long run makes the next one late rather than skipped:
 | Every | Run |
 | --- | --- |
 | 5 minutes | the report crawl, `--scan 3000 --crawl 0 --per-category 67 --catch-up 3000` |
-| week, Mondays from 08:30 UTC | publish, `--scan 0 --crawl 0 --publish`, after the run going then |
+| day, from 08:00 UTC | purge, `--scan 0 --crawl 0 --purge`, after the run going then: roll the votes to the window and drop the copies, plugs and raw PGCRs nothing needs (minutes of work on the whole database) |
+| week, Mondays from 08:30 UTC | publish, `--scan 0 --crawl 0 --publish`, after the run going then and that day's purge |
 
-A run that hits a Bungie or network error stops collecting, still purges, and exits 1; the next one
-starts as usual.
+A run that hits a Bungie or network error stops collecting, keeps what it did, and exits 1; the next
+one starts as usual.
 
 ```bash
 docker compose logs -f app                                        # the log (Docker keeps 3 × 10 MB)
@@ -66,7 +67,7 @@ docker compose stop && docker compose run --rm app python main.py --scan 0 --cra
 
 | Path | What it does |
 | --- | --- |
-| `main.py` | One run: collect, purge, and publish when asked |
+| `main.py` | One run: collect, and purge or publish when asked |
 | `service.py` | The app's scheduler: runs `main.py` on the timetable |
 | `paths.py` | Where every file lives |
 | `db/` | The SQLite database: one `.sql` file per table or view under `schema/`, rebuilt when they change (keeping `schema/collected/`) |
