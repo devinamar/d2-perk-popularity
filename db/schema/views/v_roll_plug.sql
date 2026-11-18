@@ -9,10 +9,11 @@
 CREATE VIEW v_roll_plug AS
 WITH plug AS MATERIALIZED (
     SELECT u.side, u.tier, u.weapon, u.item_hash, u.membershipId, u.itemInstanceId,
-           u.weight, s.socketIndex AS socket_idx, p.kind, p.name AS perk
+           u.weight, j.key AS socket_idx, p.kind, p.name AS perk
     FROM v_roll_unit u
     JOIN DestinyItemSocketsComponent s ON s.itemInstanceId = u.itemInstanceId
-    JOIN v_plug p ON p.hash = s.plugHash
+    JOIN json_each(s.plugHashes) j
+    JOIN v_plug p ON p.hash = j.value
     WHERE p.kind != 'intrinsic'
 ),
 choice AS MATERIALIZED (

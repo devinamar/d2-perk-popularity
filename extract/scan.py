@@ -296,13 +296,20 @@ def save(conn, entries: list, weapons: list, loadouts: dict) -> int:
     conn.executemany(
         "INSERT OR IGNORE INTO DestinyHistoricalWeaponStats VALUES (?, ?, ?, ?, ?)", rows
     )
-    for copy_id, sockets in plugs.items():
-        conn.execute("DELETE FROM DestinyItemSocketsComponent WHERE itemInstanceId = ?", (copy_id,))
-        conn.executemany(
-            "INSERT INTO DestinyItemSocketsComponent VALUES (?, ?, ?)",
-            [(copy_id, idx, plug) for idx, plug in sockets],
-        )
+    conn.executemany(
+        "INSERT OR REPLACE INTO DestinyItemSocketsComponent VALUES (?, ?)",
+        [(copy_id, plug_list(sockets)) for copy_id, sockets in plugs.items()],
+    )
     return sum(1 for r in rows if r[4])
+
+
+def plug_list(sockets: list) -> str:
+    # A copy's [(socketIndex, plugHash)] as DestinyItemSocketsComponent stores
+    # them: a JSON list of the plugs in socket order, null where none is.
+    plugs = [None] * (max((idx for idx, _ in sockets), default=-1) + 1)
+    for idx, plug in sockets:
+        plugs[idx] = plug
+    return json.dumps(plugs, separators=(',', ':'))
 
 
 # Keeping PGCRs: what the live scan and the crawl share

@@ -6,6 +6,7 @@ import json
 import pytest
 
 from db import connection
+from extract import scan
 
 # Fake hashes. Each plug has a real plugCategoryIdentifier, since v_plug sorts
 # plugs into perk kinds by category.
@@ -215,7 +216,7 @@ def add_use(
         (instance_id, character_id, item_hash, copy_id),
     )
     if copy_id:
-        conn.executemany(
-            "INSERT OR REPLACE INTO DestinyItemSocketsComponent VALUES (?, ?, ?)",
-            [(copy_id, idx, plug) for idx, plug in plugs.items()],
+        conn.execute(
+            "INSERT OR REPLACE INTO DestinyItemSocketsComponent VALUES (?, ?)",
+            (copy_id, scan.plug_list(list(plugs.items()))),
         )

@@ -294,10 +294,9 @@ def test_scan_keeps_up_to_the_cap_and_matches_equipped_copies(conn, monkeypatch)
         (5, 'c2', WEAPON, None),
         (5, 'c5', WEAPON, None),
     ]
-    assert rows("SELECT socketIndex, plugHash FROM DestinyItemSocketsComponent ORDER BY 1") == [
-        (0, FRAME),
-        (1, BARREL_A),
-        (3, TRAIT_A),
+    # The copy's plugs, one list in socket order, null for the empty socket.
+    assert rows("SELECT * FROM DestinyItemSocketsComponent") == [
+        ('copy1', f'[{FRAME},{BARREL_A},null,{TRAIT_A}]'),
     ]
     # Each finished player's profile is read once a run, though m1 played
     # twice; m5 and m6, who left, aren't read.

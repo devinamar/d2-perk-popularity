@@ -4,6 +4,8 @@
 # db/schema/collected/: the scanned PGCRs and matched loadouts, which can't be
 # fetched again. The manifest tables refill on the next run.
 import datetime
+import itertools
+import json
 import os
 import pathlib
 import sqlite3
@@ -46,6 +48,35 @@ def matches_schema(conn) -> bool:
     return schema_objects(conn) == from_files
 
 
+def fold_plugs(conn) -> None:
+    # Plugs were kept a row per socket until November 2026: fold each copy's
+    # into its list, in socket order, null where a socket had no plug.
+    rows = conn.execute(
+        "SELECT itemInstanceId, socketIndex, plugHash FROM old.DestinyItemSocketsComponent "
+        "ORDER BY itemInstanceId, socketIndex"
+    )
+
+    def folded():
+        for copy_id, sockets in itertools.groupby(rows, key=lambda r: r[0]):
+            plugs = {idx: plug for _, idx, plug in sockets}
+            yield (
+                copy_id,
+                json.dumps(
+                    [plugs.get(idx) for idx in range(max(plugs) + 1)], separators=(',', ':')
+                ),
+            )
+
+    for batch in itertools.batched(folded(), 10_000):
+        conn.executemany("INSERT INTO main.DestinyItemSocketsComponent VALUES (?, ?)", batch)
+
+
+# Kept tables reshaped beyond what their shared columns carry over: when the
+# old database's table still has the column named, its function fills the
+# new table from it (attached as old).
+# ponytail: one-off conversions; drop each once no database predates it
+CONVERT = {'DestinyItemSocketsComponent': ('socketIndex', fold_plugs)}
+
+
 def columns(conn, db_name: str, table: str) -> list:
     # Column names of db_name.table, in order; [] when the table doesn't exist.
     return [r[1] for r in conn.execute(f'PRAGMA {db_name}.table_info("{table}")')]
@@ -53,7 +84,8 @@ def columns(conn, db_name: str, table: str) -> list:
 
 def rebuild(path) -> None:
     # Replace the database file at path with one built from db/schema/,
-    # copying over the kept tables' rows (the columns both versions share).
+    # copying over the kept tables' rows (the columns both versions share, or
+    # for a reshaped table its CONVERT function's fill).
     # The old file becomes the backup, and older backups are deleted. Raises
     # when the kept rows don't fit the new tables (for example a new NOT NULL
     # column without a default); the old file then stays in place, unchanged.
@@ -70,6 +102,11 @@ def rebuild(path) -> None:
         conn.execute('ATTACH DATABASE ? AS old', (str(path),))
         for table in sorted(p.stem for p in KEPT_DIR.glob('*.sql')):
             new_cols, old_cols = columns(conn, 'main', table), columns(conn, 'old', table)
+            marker, convert = CONVERT.get(table, (None, None))
+            if marker in old_cols:
+                convert(conn)
+                kept_tables.append(table)
+                continue
             shared = [c for c in new_cols if c in old_cols]
             if shared:
                 names = ', '.join(f'"{c}"' for c in shared)
