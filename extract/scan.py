@@ -83,28 +83,62 @@ def anchor_id(conn, api, known) -> int:
     raise SystemExit("No known player has a public activity history to start the scan from.")
 
 
-def find_head(exists, anchor: int) -> int:
-    # The newest id exists() finds a PGCR for, searching forward from anchor
-    # (one it finds): the step doubles until a probe misses, then the gap
-    # between the last hit and the miss is halved down to one. A probe also
-    # tries the next two ids, since ids have gaps.
+# A search whose newest PGCR found started longer ago than this stopped short:
+# the PGCRs just below the head started minutes ago (2 at most, measured in
+# November 2026), though one long activity's own can be hours old.
+STALE_MINUTES = 30
+# How far past a gap a search looks for a PGCR before giving up.
+MAX_JUMP = 2**36
+
+
+def find_head(get, anchor: int, now: datetime.datetime | None = None) -> int:
+    # The newest id get() finds a PGCR for (get returns it, or None), searching
+    # forward from anchor (one it finds): the step doubles until a probe
+    # misses, then the gap between the last hit and the miss is halved down to
+    # one. A probe also tries the next two ids, since ids have gaps. A longer
+    # run of ids that never got a PGCR would stop the search at the same place
+    # on every run, since a run stores only older ids (stuck so for 14 days in
+    # November 2026): so while the newest PGCR found started more than
+    # STALE_MINUTES ago, the search jumps on past the gap, the step doubling
+    # until a probe finds one, and searches on from there.
     # ponytail: in-progress activities thin out the ids near the head, so this
     # can stop a little short of it and the walk starts slightly older
-    def probe(i):
-        return exists(i) or exists(i + 1) or exists(i + 2)
+    now = now or datetime.datetime.now(datetime.UTC)
+    stale = iso(now - datetime.timedelta(minutes=STALE_MINUTES))
+    newest = ''  # the latest period of the PGCRs found
 
-    hit, step = anchor, 1
-    while probe(hit + step):
-        hit += step
-        step *= 2
-    miss = hit + step
-    while miss - hit > 1:
-        mid = (hit + miss) // 2
-        if probe(mid):
-            hit = mid
-        else:
-            miss = mid
-    return hit
+    def probe(i):
+        # The first of i, i + 1, i + 2 with a PGCR, or None.
+        nonlocal newest
+        for j in (i, i + 1, i + 2):
+            pgcr = get(j)
+            if pgcr is not None:
+                newest = max(newest, pgcr['period'])
+                return j
+        return None
+
+    hit = anchor
+    probe(anchor)
+    while True:
+        step = 1
+        while probe(hit + step) is not None:
+            hit += step
+            step *= 2
+        miss = hit + step
+        while miss - hit > 1:
+            mid = (hit + miss) // 2
+            if probe(mid) is not None:
+                hit = mid
+            else:
+                miss = mid
+        if newest >= stale:
+            return hit
+        step = 2
+        while (found := probe(hit + step)) is None:
+            step *= 2
+            if step > MAX_JUMP:
+                return hit
+        hit = found
 
 
 # Reading a PGCR

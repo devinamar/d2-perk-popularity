@@ -166,7 +166,7 @@ def main():
         if args.scan:
             print("Finding the newest PGCR...")
             anchor = scan.anchor_id(conn, api, known)
-            head = scan.find_head(lambda i: scan.fetch(api.get_pgcr, i) is not None, anchor)
+            head = scan.find_head(lambda i: scan.fetch(api.get_pgcr, i), anchor)
             scan.scan(conn, api, run, head, args.scan)
         if args.crawl:
             scan.crawl(conn, api, run, args.crawl, known)

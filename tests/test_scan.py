@@ -1,6 +1,8 @@
 # The PGCR scan and crawl against a stand-in API: finding the newest PGCR,
 # reading a report, what a scan keeps and matches, and what a crawl reads,
 # fetches and keeps.
+import datetime
+
 from conftest import (
     BARREL_A,
     CUTTHROAT,
@@ -144,9 +146,34 @@ class FakeAPI:
         return {'activities': found[page * count : (page + 1) * count]}
 
 
+NOW = datetime.datetime(2099, 1, 1, tzinfo=datetime.UTC)
+
+
 def test_find_head_steps_over_gaps():
     have = set(range(1000, 50_001)) - {1001, 1002, 30_000, 30_001}
-    assert scan.find_head(have.__contains__, 1000) == 50_000
+
+    def get(i):
+        return {'period': '2098-12-31T23:55:00Z'} if i in have else None
+
+    assert scan.find_head(get, 1000, NOW) == 50_000
+
+
+def test_find_head_gets_past_a_gap_after_an_old_anchor():
+    # Ids 1001 to 1009 never got a PGCR. While the anchor is minutes old the
+    # gap may be activities still under way, and the search stops there; once
+    # it is older than STALE_MINUTES, the search jumps the gap to the newest.
+    def reports(anchor_period):
+        def get(i):
+            if i == 1000:
+                return {'period': anchor_period}
+            if 1010 <= i <= 50_000:
+                return {'period': '2098-12-31T23:58:00Z'}
+            return None
+
+        return get
+
+    assert scan.find_head(reports('2098-12-31T23:50:00Z'), 1000, NOW) == 1000
+    assert scan.find_head(reports('2098-12-17T18:40:00Z'), 1000, NOW) == 50_000
 
 
 def test_pgcr_rows():
